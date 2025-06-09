@@ -56,8 +56,8 @@ pip install -r requirements.txt
    ina228 = adafruit_ina228.INA228(i2c)
    
    print(f"Bus Voltage: {ina228.bus_voltage:.3f} V")
-   print(f"Current: {ina228.current:.3f} mA")
-   print(f"Power: {ina228.power:.3f} mW")
+   print(f"Current: {ina228.current:.3f} A")
+   print(f"Power: {ina228.power:.3f} W")
    ```
 
 ## Project Structure
