@@ -89,7 +89,7 @@ class SolarDataLogger:
             # Log sensor information
             self.logger.info(f"✅ INA228 connected successfully!")
             self.logger.info(f"📋 Averaging: {self.sensor.averaging_count} samples")
-            self.logger.info(f"📋 Current voltage: {self.sensor.voltage:.3f}V")
+            self.logger.info(f"📋 Current voltage: {self.sensor.bus_voltage:.3f}V")
             self.logger.info(f"📋 Current: {self.sensor.current*1000:.1f}mA")
             
             return True
@@ -150,7 +150,7 @@ class SolarDataLogger:
             # Read all sensor values
             reading = SensorReading(
                 timestamp=timestamp,
-                voltage=self.sensor.voltage,  # Use voltage (alias for bus_voltage)
+                voltage=self.sensor.bus_voltage,  # Use bus_voltage directly
                 current=self.sensor.current,
                 power=self.sensor.power,
                 shunt_voltage=self.sensor.shunt_voltage,

@@ -14,7 +14,7 @@ try:
     
     print("✅ INA228 sensor connected successfully!")
     print("\n📊 Sensor readings:")
-    print(f"   Voltage: {ina228.voltage:.3f} V")
+    print(f"   Bus Voltage: {ina228.bus_voltage:.3f} V")
     print(f"   Shunt Voltage: {ina228.shunt_voltage * 1000000:.2f} µV")
     print(f"   Current: {ina228.current * 1000:.2f} mA")
     print(f"   Power: {ina228.power * 1000:.2f} mW")
