@@ -30,7 +30,7 @@ class SensorReading:
     current: float
     power: float
     shunt_voltage: float
-    temperature: float
+    temperature: float  # Placeholder - not available on this sensor
     energy: float
     charge: float
 
@@ -89,8 +89,8 @@ class SolarDataLogger:
             # Log sensor information
             self.logger.info(f"✅ INA228 connected successfully!")
             self.logger.info(f"📋 Averaging: {self.sensor.averaging_count} samples")
-            self.logger.info(f"📋 Temperature: {self.sensor.temperature:.1f}°C")
             self.logger.info(f"📋 Current voltage: {self.sensor.voltage:.3f}V")
+            self.logger.info(f"📋 Current: {self.sensor.current*1000:.1f}mA")
             
             return True
         except Exception as e:
@@ -122,7 +122,7 @@ class SolarDataLogger:
             current DOUBLE PRECISION NOT NULL,
             power DOUBLE PRECISION NOT NULL,
             shunt_voltage DOUBLE PRECISION NOT NULL,
-            temperature DOUBLE PRECISION NOT NULL,
+            temperature DOUBLE PRECISION NOT NULL,  -- Placeholder, not available
             energy DOUBLE PRECISION NOT NULL,
             charge DOUBLE PRECISION NOT NULL
         );
@@ -150,11 +150,11 @@ class SolarDataLogger:
             # Read all sensor values
             reading = SensorReading(
                 timestamp=timestamp,
-                voltage=self.sensor.voltage,
+                voltage=self.sensor.voltage,  # Use voltage (alias for bus_voltage)
                 current=self.sensor.current,
                 power=self.sensor.power,
                 shunt_voltage=self.sensor.shunt_voltage,
-                temperature=self.sensor.temperature,
+                temperature=0.0,  # Temperature not available on this sensor
                 energy=self.sensor.energy,
                 charge=self.sensor.charge
             )
@@ -242,7 +242,7 @@ class SolarDataLogger:
                     self.logger.info(
                         f"📊 Status: {reading_count} readings, {rate:.1f} Hz | "
                         f"V: {reading.voltage:.3f}V, I: {reading.current*1000:.1f}mA, "
-                        f"P: {reading.power*1000:.1f}mW, T: {reading.temperature:.1f}°C"
+                        f"P: {reading.power*1000:.1f}mW, E: {reading.energy:.3f}J"
                     )
                     reading_count = 0
                     last_status_time = current_time
