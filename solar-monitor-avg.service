@@ -1,0 +1,19 @@
+[Unit]
+Description=Solar Monitor Data Logger - 1-Second Averaging
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/solar-monitor
+Environment=PATH=/home/pi/solar-monitor/.venv/bin
+ExecStart=/home/pi/solar-monitor/.venv/bin/python /home/pi/solar-monitor/data_logger_avg.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
