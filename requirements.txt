@@ -1,0 +1,4 @@
+adafruit-circuitpython-ina228
+adafruit-circuitpython-busdevice
+adafruit-circuitpython-register
+RPi.GPIO
