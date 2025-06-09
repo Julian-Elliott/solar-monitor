@@ -34,6 +34,14 @@ pip install --upgrade pip
 echo "📚 Installing Python packages..."
 pip install -r requirements.txt
 
+# Create .env file if it doesn't exist
+if [ ! -f ".env" ]; then
+    echo "⚙️ Creating .env configuration file..."
+    cp .env.example .env
+    echo "📝 Please edit .env file with your TimescaleDB credentials:"
+    echo "   nano .env"
+fi
+
 echo "✅ Setup complete!"
 echo ""
 echo "To activate the environment manually, run:"
