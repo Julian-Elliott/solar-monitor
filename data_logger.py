@@ -88,9 +88,9 @@ class SolarDataLogger:
             
             # Log sensor information
             self.logger.info(f"✅ INA228 connected successfully!")
-            self.logger.info(f"📋 Manufacturer ID: 0x{self.sensor.manufacturer_id:04X}")
             self.logger.info(f"📋 Averaging: {self.sensor.averaging_count} samples")
             self.logger.info(f"📋 Temperature: {self.sensor.temperature:.1f}°C")
+            self.logger.info(f"📋 Current voltage: {self.sensor.voltage:.3f}V")
             
             return True
         except Exception as e:
