@@ -1,14 +1,109 @@
-# Solar Monitor 🌞⚡
+# PS100 Solar Monitor 🌞⚡
 
-A high-performance Raspberry Pi-based solar power monitoring system using the Adafruit INA228 I2C power monitor with TimescaleDB data storage.
+**Real-time monitoring system for Anker SOLIX PS100 solar panels**
 
-## Features
-- **High-frequency data collection** (up to 10 Hz sensor readings)
-- **TimescaleDB integration** for time-series data storage
-- **Real-time monitoring** with continuous data logging
-- **Batch data insertion** for optimal database performance
-- **Automatic reconnection** and error recovery
-- **Comprehensive logging** and monitoring
+This repository has been **completely rebuilt** and optimized specifically for **Anker SOLIX PS100** solar panels with TimescaleDB integration.
+
+## 🎯 Quick Start
+
+### For PS100 Solar Panel Monitoring:
+👉 **See [README_PS100.md](README_PS100.md)** for complete setup instructions
+
+### For TimescaleDB Integration:
+👉 **See [PS100_TIMESCALEDB_SETUP.md](PS100_TIMESCALEDB_SETUP.md)** for TimescaleDB setup
+
+## 🚀 Installation Options
+
+### Option 1: SQLite Database (Standalone)
+```bash
+./setup_ps100.sh
+sudo systemctl start ps100-monitor
+```
+
+### Option 2: TimescaleDB Integration (Recommended)
+```bash
+# Edit .env with TimescaleDB credentials
+cp .env.example .env
+nano .env
+
+# Setup and start
+./setup_ps100_timescale.sh
+sudo systemctl start ps100-timescale-monitor
+```
+
+## ⚡ Anker SOLIX PS100 Specifications
+- **Peak Power**: 100W
+- **Operating Voltage**: 26.5V (Vmp)
+- **Operating Current**: 3.77A (Imp)  
+- **10A Fuse Protection**: Built-in safety
+- **Multi-panel Support**: Up to 8 panels
+
+## 📊 Features
+
+✅ **Optimized for PS100**: Calibrated for 26.5V, 3.77A, 100W operation  
+✅ **High-Frequency Sampling**: 10 Hz data collection with 1-second averaging  
+✅ **TimescaleDB Integration**: Permanent data storage with compression  
+✅ **Multi-Panel Support**: Monitor up to 8 PS100 panels individually  
+✅ **Real-time Analytics**: Performance estimation and condition analysis  
+✅ **Production Ready**: Systemd service with auto-restart  
+
+## 📁 System Files
+
+### Core Application
+- `ps100_monitor.py` - Main monitoring application (SQLite)
+- `ps100_timescale_monitor.py` - TimescaleDB monitoring application
+- `ps100_sensor_config.py` - INA228 sensor configuration for PS100
+- `ps100_database.py` - SQLite database layer
+- `ps100_timescaledb.py` - TimescaleDB database layer
+
+### Setup & Configuration
+- `setup_ps100.sh` - SQLite setup script
+- `setup_ps100_timescale.sh` - TimescaleDB setup script
+- `config/panel_specifications.yaml` - PS100 configuration
+- `.env.example` - Environment configuration template
+
+### Documentation
+- `README_PS100.md` - Complete PS100 setup guide
+- `PS100_TIMESCALEDB_SETUP.md` - TimescaleDB integration guide
+- `PS100_REBUILD_SUMMARY.md` - System rebuild documentation
+
+## 🔧 Service Management
+
+```bash
+# SQLite version
+sudo systemctl start ps100-monitor
+sudo systemctl status ps100-monitor
+sudo journalctl -u ps100-monitor -f
+
+# TimescaleDB version  
+sudo systemctl start ps100-timescale-monitor
+sudo systemctl status ps100-timescale-monitor
+sudo journalctl -u ps100-timescale-monitor -f
+```
+
+## 📈 Expected Output
+
+```
+🌞 PS100 Solar Monitor - 14:30:25
+================================================================================
+📊 SYSTEM TOTALS:
+   Total Power:   245.3W
+   Total Current:  9.2A
+   Avg Voltage:   26.1V
+   Active Panels: 3
+
+📋 INDIVIDUAL PANELS:
+   ✅ PS100_0X40: V: 26.3V | I: 3.65A | P: 96.0W | Excellent - Full sun
+   ✅ PS100_0X41: V: 26.0V | I: 3.71A | P: 96.5W | Excellent - Full sun
+   ⚠️ PS100_0X42: V: 25.8V | I: 2.05A | P: 52.8W | Good - Partial sun
+
+📈 STATISTICS:
+   Uptime: 2.3h | Readings: 4,147 | Errors: 0 | Alerts: 3
+```
+
+---
+
+**Built specifically for Anker SOLIX PS100 Solar Panels** | **Multi-panel support** | **TimescaleDB integration** | **Production ready**
 
 ## Hardware Requirements
 - Raspberry Pi (any model with GPIO)
