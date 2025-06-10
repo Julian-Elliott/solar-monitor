@@ -33,12 +33,14 @@ sudo systemctl status solar-monitor-avg
 
 ### 3. Test the Calibration Fix
 ```bash
-# Test calibration scenarios
+# Test calibration scenarios (should work now)
 python3 fix_sensor_calibration.py
 
-# Quick sensor test with new calibration
+# Quick sensor test with new calibration  
 python3 test_sensor.py
 ```
+
+**Note**: If you see import errors about `ConversionTime` or `AveragingCount`, that's normal - the latest version focuses on the core calibration fix.
 
 ### 4. Restart the Service
 ```bash
@@ -83,9 +85,11 @@ The logs should now show:
 If voltage readings are still incorrect:
 
 1. **Check sensor connection**: Ensure I2C is working
-2. **Test calibration manually**: Run `fix_sensor_calibration.py`
+2. **Test calibration manually**: Run `fix_sensor_calibration.py`  
 3. **Verify environment**: Check if running in virtual environment
 4. **Check logs**: Look for calibration application messages
+
+**Library Compatibility Note**: Some advanced settings (averaging, conversion times) may not be available in older library versions but the core calibration fix will still work.
 
 ## 📊 Database Impact
 
