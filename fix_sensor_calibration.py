@@ -12,7 +12,6 @@ This script addresses the voltage reading issues by:
 import time
 import board
 import adafruit_ina228
-from adafruit_ina228 import ConversionTime, AveragingCount, Mode
 
 def test_sensor_calibration():
     """Test different calibration scenarios to find optimal settings for solar monitoring"""
@@ -112,10 +111,11 @@ def test_sensor_calibration():
         # Apply recommended calibration and show optimized settings
         print("\n🚀 Applying recommended solar monitoring configuration...")
         ina228.set_calibration(0.1, 1.0)  # 32V, 1A max
-        ina228.averaging_count = AveragingCount.COUNT_64  # More averaging for stability
-        ina228.bus_voltage_conv_time = ConversionTime.TIME_1052_US  # Longer conversion for accuracy
-        ina228.shunt_voltage_conv_time = ConversionTime.TIME_1052_US
-        ina228.temp_conv_time = ConversionTime.TIME_1052_US
+        
+        # Note: Advanced settings may not be available in this library version
+        # These would be optimal but aren't available:
+        # ina228.averaging_count = 64  # More averaging for stability
+        # ina228.bus_voltage_conv_time = longer conversion time
         
         time.sleep(0.2)  # Allow settings to apply
         
@@ -124,7 +124,12 @@ def test_sensor_calibration():
         print(f"⚡ Current: {ina228.current*1000:.1f} mA")
         print(f"🔌 Power: {ina228.power*1000:.1f} mW")
         print(f"🌡️  Temp: {ina228.die_temperature:.1f}°C")
-        print(f"📈 Averaging: {ina228.averaging_count} samples")
+        
+        # Check if averaging_count property exists
+        try:
+            print(f"📈 Averaging: {ina228.averaging_count} samples")
+        except AttributeError:
+            print("📈 Averaging: Not available in this library version")
         
     except Exception as e:
         print(f"❌ Error: {e}")
