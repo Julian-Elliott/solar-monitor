@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  solarscope-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development  # We'll add this build stage
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - SCAN_INTERVAL=2.0  # Slower for development
+    volumes:
+      - .:/app  # Mount source code for hot reload
+      - ./logs:/app/logs
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    
+  timescaledb:
+    ports:
+      - "5432:5432"  # Expose database port for development
+    
+  redis:
+    ports:
+      - "6379:6379"  # Expose Redis port for development

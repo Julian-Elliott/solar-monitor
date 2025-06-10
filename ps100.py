@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PS100 Solar Monitor - Unified Implementation
-Simplified, consolidated monitoring system for Anker SOLIX PS100 panels
+PS100 Solar Monitor - TimescaleDB Implementation
+Monitoring system for Anker SOLIX PS100 panels with TimescaleDB storage
 """
 
 import os
@@ -10,25 +10,16 @@ import time
 import json
 import asyncio
 import logging
-import sqlite3
 import argparse
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
-import yaml
-import numpy as np
 import board
 import adafruit_ina228
 from dotenv import load_dotenv
-
-# Optional TimescaleDB support
-try:
-    import psycopg2
-    import psycopg2.extras
-    TIMESCALE_AVAILABLE = True
-except ImportError:
-    TIMESCALE_AVAILABLE = False
+import psycopg2
+import psycopg2.extras
 
 @dataclass
 class PS100Config:
@@ -119,141 +110,91 @@ class PS100Sensor:
             return "Poor - Heavy clouds/shade"
 
 class PS100Database:
-    """Unified database interface supporting both SQLite and TimescaleDB"""
+    """TimescaleDB interface for PS100 readings"""
     
-    def __init__(self, use_timescale: bool = False):
-        self.use_timescale = use_timescale and TIMESCALE_AVAILABLE
+    def __init__(self):
         self.logger = logging.getLogger(__name__)
-        
-        if self.use_timescale:
-            self._setup_timescale()
-        else:
-            self._setup_sqlite()
-    
-    def _setup_sqlite(self):
-        """Setup SQLite database"""
-        self.db_path = "ps100_solar.db"
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        
-        # Create table
-        self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS readings (
-                timestamp TEXT PRIMARY KEY,
-                panel_id TEXT,
-                voltage REAL,
-                current REAL,
-                power REAL,
-                energy_wh REAL,
-                temperature REAL,
-                efficiency_percent REAL,
-                conditions TEXT,
-                alerts TEXT
-            )
-        """)
-        self.conn.commit()
-        self.logger.info("✅ SQLite database initialized")
+        self._setup_timescale()
     
     def _setup_timescale(self):
         """Setup TimescaleDB connection"""
         load_dotenv()
-        self.conn = psycopg2.connect(
-            host=os.getenv('TIMESCALE_HOST'),
-            port=os.getenv('TIMESCALE_PORT'),
-            user=os.getenv('TIMESCALE_USER'),
-            password=os.getenv('TIMESCALE_PASSWORD'),
-            database=os.getenv('TIMESCALE_DATABASE')
-        )
-        self.cursor = self.conn.cursor()
-        
-        # Create hypertable
-        self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ps100_readings (
-                time TIMESTAMPTZ NOT NULL,
-                panel_id TEXT NOT NULL,
-                voltage REAL NOT NULL,
-                current REAL NOT NULL,
-                power REAL NOT NULL,
-                energy_wh REAL,
-                temperature REAL,
-                efficiency_percent REAL,
-                conditions TEXT,
-                alerts JSONB,
-                PRIMARY KEY (time, panel_id)
-            )
-        """)
-        
-        # Create hypertable if not exists
         try:
-            self.cursor.execute("SELECT create_hypertable('ps100_readings', 'time', if_not_exists => TRUE)")
-        except:
-            pass  # Already exists
+            self.conn = psycopg2.connect(
+                host=os.getenv('TIMESCALE_HOST'),
+                port=os.getenv('TIMESCALE_PORT'),
+                user=os.getenv('TIMESCALE_USER'),
+                password=os.getenv('TIMESCALE_PASSWORD'),
+                database=os.getenv('TIMESCALE_DATABASE')
+            )
+            self.cursor = self.conn.cursor()
             
-        self.conn.commit()
-        self.logger.info("✅ TimescaleDB initialized")
+            # Create hypertable
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ps100_readings (
+                    time TIMESTAMPTZ NOT NULL,
+                    panel_id TEXT NOT NULL,
+                    voltage REAL NOT NULL,
+                    current REAL NOT NULL,
+                    power REAL NOT NULL,
+                    energy_wh REAL,
+                    temperature REAL,
+                    efficiency_percent REAL,
+                    conditions TEXT,
+                    alerts JSONB,
+                    PRIMARY KEY (time, panel_id)
+                )
+            """)
+            
+            # Create hypertable if not exists
+            try:
+                self.cursor.execute("SELECT create_hypertable('ps100_readings', 'time', if_not_exists => TRUE)")
+            except:
+                pass  # Already exists
+                
+            self.conn.commit()
+            self.logger.info("✅ TimescaleDB initialized")
+        except Exception as e:
+            self.logger.error(f"❌ TimescaleDB connection failed: {e}")
+            raise
     
     def store_reading(self, reading: Dict[str, Any]):
-        """Store a reading in the database"""
+        """Store a reading in TimescaleDB"""
         if not reading:
             return
             
         try:
-            if self.use_timescale:
-                self.cursor.execute("""
-                    INSERT INTO ps100_readings 
-                    (time, panel_id, voltage, current, power, energy_wh, temperature, 
-                     efficiency_percent, conditions, alerts)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (time, panel_id) DO UPDATE SET
-                        voltage = EXCLUDED.voltage,
-                        power = EXCLUDED.power
-                """, (
-                    reading['timestamp'], reading['panel_id'],
-                    reading['voltage'], reading['current'], reading['power'],
-                    reading['energy_wh'], reading['temperature'],
-                    reading['efficiency_percent'], reading['conditions'],
-                    json.dumps(reading['alerts'])
-                ))
-                self.conn.commit()
-            else:
-                self.conn.execute("""
-                    INSERT OR REPLACE INTO readings 
-                    (timestamp, panel_id, voltage, current, power, energy_wh, temperature,
-                     efficiency_percent, conditions, alerts)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    reading['timestamp'].isoformat(), reading['panel_id'],
-                    reading['voltage'], reading['current'], reading['power'],
-                    reading['energy_wh'], reading['temperature'],
-                    reading['efficiency_percent'], reading['conditions'],
-                    json.dumps(reading['alerts'])
-                ))
-                self.conn.commit()
-                
+            self.cursor.execute("""
+                INSERT INTO ps100_readings 
+                (time, panel_id, voltage, current, power, energy_wh, temperature, 
+                 efficiency_percent, conditions, alerts)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (time, panel_id) DO UPDATE SET
+                    voltage = EXCLUDED.voltage,
+                    power = EXCLUDED.power
+            """, (
+                reading['timestamp'], reading['panel_id'],
+                reading['voltage'], reading['current'], reading['power'],
+                reading['energy_wh'], reading['temperature'],
+                reading['efficiency_percent'], reading['conditions'],
+                json.dumps(reading['alerts'])
+            ))
+            self.conn.commit()
             self.logger.debug(f"📊 Stored: {reading['power']:.1f}W")
         except Exception as e:
             self.logger.error(f"❌ Database store failed: {e}")
     
     def get_recent_readings(self, limit: int = 10) -> List[Dict]:
-        """Get recent readings from database"""
+        """Get recent readings from TimescaleDB"""
         try:
-            if self.use_timescale:
-                self.cursor.execute("""
-                    SELECT time, panel_id, voltage, current, power, conditions
-                    FROM ps100_readings 
-                    ORDER BY time DESC LIMIT %s
-                """, (limit,))
-                rows = self.cursor.fetchall()
-                return [{'time': r[0], 'panel_id': r[1], 'voltage': r[2], 
-                        'current': r[3], 'power': r[4], 'conditions': r[5]} for r in rows]
-            else:
-                cursor = self.conn.execute("""
-                    SELECT timestamp, panel_id, voltage, current, power, conditions
-                    FROM readings ORDER BY timestamp DESC LIMIT ?
-                """, (limit,))
-                rows = cursor.fetchall()
-                return [{'time': r[0], 'panel_id': r[1], 'voltage': r[2],
-                        'current': r[3], 'power': r[4], 'conditions': r[5]} for r in rows]
+            self.cursor.execute("""
+                SELECT time, panel_id, voltage, current, power, conditions
+                FROM ps100_readings 
+                ORDER BY time DESC LIMIT %s
+            """, (limit,))
+            rows = self.cursor.fetchall()
+            return [{'time': r[0], 'panel_id': r[1], 'voltage': r[2], 
+                    'current': r[3], 'power': r[4], 'conditions': r[5]} for r in rows]
         except Exception as e:
             self.logger.error(f"❌ Database query failed: {e}")
             return []
@@ -264,10 +205,9 @@ class PS100Database:
             self.conn.close()
 
 class PS100Monitor:
-    """Unified PS100 monitoring system"""
+    """PS100 monitoring system with TimescaleDB"""
     
-    def __init__(self, use_timescale: bool = False, addresses: List[int] = None):
-        self.use_timescale = use_timescale
+    def __init__(self, addresses: List[int] = None):
         self.addresses = addresses or [0x40]
         self.sensors = {}
         self.database = None
@@ -297,10 +237,9 @@ class PS100Monitor:
         if not self.sensors:
             raise RuntimeError("No sensors initialized successfully")
         
-        # Initialize database
-        self.database = PS100Database(self.use_timescale)
-        db_type = "TimescaleDB" if self.use_timescale else "SQLite"
-        self.logger.info(f"✅ Database ({db_type}) ready")
+        # Initialize TimescaleDB
+        self.database = PS100Database()
+        self.logger.info("✅ Database (TimescaleDB) ready")
     
     async def run_monitor(self, read_interval: float = 1.0):
         """Main monitoring loop"""
@@ -351,15 +290,14 @@ class PS100Monitor:
         
         return {
             'sensors': len(self.sensors),
-            'database': "TimescaleDB" if self.use_timescale else "SQLite",
+            'database': "TimescaleDB",
             'latest_reading': latest,
             'running': self.running
         }
 
 def main():
     """Main entry point with command line interface"""
-    parser = argparse.ArgumentParser(description='PS100 Solar Monitor')
-    parser.add_argument('--timescale', action='store_true', help='Use TimescaleDB instead of SQLite')
+    parser = argparse.ArgumentParser(description='PS100 Solar Monitor - TimescaleDB')
     parser.add_argument('--addresses', nargs='+', type=lambda x: int(x, 0), 
                        default=[0x40], help='I2C addresses (e.g., 0x40 0x41)')
     parser.add_argument('--interval', type=float, default=1.0, help='Read interval in seconds')
@@ -368,16 +306,8 @@ def main():
     
     args = parser.parse_args()
     
-    # Check TimescaleDB availability
-    if args.timescale and not TIMESCALE_AVAILABLE:
-        print("❌ TimescaleDB support not available (psycopg2 not installed)")
-        sys.exit(1)
-    
     try:
-        monitor = PS100Monitor(
-            use_timescale=args.timescale,
-            addresses=args.addresses
-        )
+        monitor = PS100Monitor(addresses=args.addresses)
         
         if args.test:
             # Test mode - single reading
