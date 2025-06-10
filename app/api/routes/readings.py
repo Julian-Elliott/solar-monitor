@@ -92,6 +92,7 @@ async def get_readings(
     limit: int = Query(50, ge=1, le=500, description="Maximum number of readings to return"),
     panel_id: Optional[UUID] = Query(None, description="Filter by panel ID"),
     hours: Optional[int] = Query(None, ge=1, le=168, description="Filter by hours from now"),
+    all_readings: bool = Query(False, description="Get all recent readings instead of just latest per panel"),
     service: MonitoringService = Depends(get_monitoring_service)
 ):
     """Get readings with optional filtering"""
@@ -99,6 +100,9 @@ async def get_readings(
         if panel_id:
             readings = await service.get_panel_readings(panel_id, limit=limit, hours=hours)
             total = len(readings)  # Simplified for panel-specific queries
+        elif all_readings:
+            readings = await service.get_all_recent_readings(limit=limit, hours=hours)
+            total = len(readings)  # Simplified for recent readings
         else:
             readings = await service.get_latest_readings(limit=limit)
             total = len(readings)  # Simplified for latest readings
@@ -111,6 +115,29 @@ async def get_readings(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve readings: {str(e)}")
+
+@router.get("/history", response_model=PaginatedResponse)
+async def get_readings_history(
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of readings to return"),
+    hours: Optional[int] = Query(1, ge=1, le=168, description="Hours of history to retrieve"),
+    panel_id: Optional[UUID] = Query(None, description="Filter by panel ID"),
+    service: MonitoringService = Depends(get_monitoring_service)
+):
+    """Get historical readings chronologically"""
+    try:
+        if panel_id:
+            readings = await service.get_panel_readings(panel_id, limit=limit, hours=hours)
+        else:
+            readings = await service.get_all_recent_readings(limit=limit, hours=hours)
+        
+        return PaginatedResponse(
+            items=readings,
+            total=len(readings),
+            page=1,
+            size=limit
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve reading history: {str(e)}")
 
 @router.get("/{reading_id}", response_model=APIResponse)
 async def get_reading(

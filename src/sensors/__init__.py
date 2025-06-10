@@ -29,31 +29,49 @@ class PS100Sensor:
             self.ina228 = adafruit_ina228.INA228(i2c, self.address)
             
             # Configure for PS100 specifications
-            # Shunt: 15mΩ, Max current: 10A (fuse rating), but typical max is 3.77A
-            self.ina228.set_shunt(self.config.SHUNT_RESISTANCE, self.config.MAX_CURRENT)
+            # Use the library's calibration method - closest to our 3.77A max current
+            self.ina228.set_calibration_32V_2A()  # This should handle up to 2A well
+            
+            # Note: shunt_resistance is read-only in this library
+            # The calibration method sets it automatically
             
             self.logger.info(f"✅ PS100 sensor initialized at 0x{self.address:02X}")
-            self.logger.info(f"   Shunt: {self.config.SHUNT_RESISTANCE}Ω, Max: {self.config.MAX_CURRENT}A")
+            self.logger.info(f"   Using calibration: 32V/2A")
+            self.logger.info(f"   Actual shunt resistance: {self.ina228.shunt_resistance}Ω")
         except Exception as e:
             self.logger.error(f"❌ Sensor initialization failed: {e}")
             raise
     
+    def initialize(self) -> bool:
+        """Initialize the sensor (already done in constructor, but needed for compatibility)"""
+        try:
+            # Test if sensor is working by doing a quick read
+            _ = self.ina228.bus_voltage
+            return True
+        except Exception as e:
+            self.logger.error(f"Sensor initialization test failed: {e}")
+            return False
+    
     def read(self) -> Dict[str, Any]:
         """Read sensor data and return structured reading"""
         try:
-            # Raw readings
-            voltage = float(self.ina228.voltage)  # Bus voltage is correct
+            # Raw readings using correct attribute names
+            voltage = float(self.ina228.bus_voltage)  # Use bus_voltage not voltage
             shunt_voltage = float(self.ina228.shunt_voltage)
+            current = float(self.ina228.current)
+            power = float(self.ina228.power)
             
-            # Calculate current manually using Ohm's law (more accurate)
-            # I = V_shunt / R_shunt
-            current = shunt_voltage / self.config.SHUNT_RESISTANCE
+            # Get temperature if available
+            temperature = None
+            if hasattr(self.ina228, 'die_temperature'):
+                try:
+                    temperature = float(self.ina228.die_temperature)
+                except:
+                    pass
             
-            # Calculate power manually
-            power = voltage * current
-            
-            # Temperature (fallback if not available)
-            temp = float(getattr(self.ina228, 'temperature', 25.0))
+            # If temperature not available, use a reasonable default
+            if temperature is None:
+                temperature = 25.0  # Default ambient temperature
             
             # Calculate derived values
             energy_wh = power / 3600.0  # Wh for this second
@@ -62,33 +80,26 @@ class PS100Sensor:
             # Determine conditions
             conditions = self._assess_conditions(voltage, current, power)
             
-            # Get alert flags if available
-            try:
-                alerts = self.ina228.alert_flags
-                has_alerts = any(alerts.values()) if hasattr(alerts, 'values') else False
-            except:
-                # Fallback alert checking
-                alerts = {
-                    'overvoltage': voltage > self.config.MAX_VOLTAGE,
-                    'overcurrent': current > self.config.MAX_CURRENT,
-                    'power_limit': power > self.config.RATED_POWER * 1.1
-                }
-                has_alerts = any(alerts.values())
-            
-            return {
-                'timestamp': datetime.now(timezone.utc),
+            reading = {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'voltage': voltage,
-                'current': current, 
+                'current': current,
                 'power': power,
+                'shunt_voltage': shunt_voltage,
+                'temperature': temperature,
                 'energy_wh': energy_wh,
-                'temperature': temp,
-                'efficiency_percent': efficiency,
+                'efficiency': efficiency,
                 'conditions': conditions,
-                'alerts': alerts,
-                'has_alerts': has_alerts,
-                'panel_id': f'PS100_0X{self.address:02X}',
-                'shunt_voltage': shunt_voltage  # For debugging
+                'raw_data': {
+                    'bus_voltage': voltage,
+                    'shunt_voltage': shunt_voltage,
+                    'die_temperature': temperature
+                }
             }
+            
+            self.logger.debug(f"📊 PS100 reading: {power:.3f}W, {voltage:.3f}V, {current:.3f}A")
+            return reading
+            
         except Exception as e:
             self.logger.error(f"❌ Sensor read failed: {e}")
             return None

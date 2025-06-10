@@ -43,7 +43,7 @@ class Panel(PanelBase):
 class ReadingBase(BaseModel):
     """Base reading model"""
     voltage: float = Field(..., ge=0, le=50, description="Voltage in volts")
-    current: float = Field(..., ge=0, le=20, description="Current in amperes")
+    current: float = Field(..., ge=-1, le=20, description="Current in amperes (allow small negative values)")
     power: float = Field(..., ge=0, le=1000, description="Power in watts")
     temperature: Optional[float] = Field(None, ge=-40, le=100, description="Temperature in Celsius")
     efficiency: float = Field(..., ge=0, le=200, description="Efficiency percentage")

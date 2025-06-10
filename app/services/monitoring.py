@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import List, Optional, Dict, Any
 from uuid import UUID, uuid4
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 
 from app.models import Reading, ReadingCreate, Alert, AlertCreate
@@ -24,7 +24,7 @@ class MonitoringService:
     async def create_reading(self, reading_data: ReadingCreate) -> Reading:
         """Store a new sensor reading"""
         reading_id = uuid4()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)  # Use timezone-aware UTC datetime
         
         # Convert alerts list to JSON
         alerts_json = json.dumps(reading_data.alerts)
@@ -48,7 +48,11 @@ class MonitoringService:
             """, now, reading_data.panel_id)
             
             logger.debug(f"📊 Stored reading for panel {reading_data.panel_id}: {reading_data.power}W")
-            return Reading(**dict(row))
+            
+            # Parse alerts JSON before creating Reading object
+            row_dict = dict(row)
+            row_dict['alerts'] = json.loads(row['alerts']) if row['alerts'] else []
+            return Reading(**row_dict)
     
     async def get_reading(self, reading_id: UUID) -> Optional[Reading]:
         """Get a reading by ID"""
@@ -70,7 +74,7 @@ class MonitoringService:
         
         if hours:
             query += " AND timestamp >= $2"
-            params.append(datetime.utcnow() - timedelta(hours=hours))
+            params.append(datetime.now(timezone.utc) - timedelta(hours=hours))
         
         query += " ORDER BY timestamp DESC LIMIT $" + str(len(params) + 1)
         params.append(limit)
@@ -95,6 +99,29 @@ class MonitoringService:
                 ORDER BY panel_id, timestamp DESC
                 LIMIT $1
             """, limit)
+            readings = []
+            for row in rows:
+                # Parse alerts JSON
+                alerts = json.loads(row['alerts']) if row['alerts'] else []
+                row_dict = dict(row)
+                row_dict['alerts'] = alerts
+                readings.append(Reading(**row_dict))
+            return readings
+    
+    async def get_all_recent_readings(self, limit: int = 50, hours: Optional[int] = None) -> List[Reading]:
+        """Get all recent readings chronologically (not just latest per panel)"""
+        query = "SELECT * FROM readings"
+        params = []
+        
+        if hours:
+            query += " WHERE timestamp >= $1"
+            params.append(datetime.now(timezone.utc) - timedelta(hours=hours))
+        
+        query += " ORDER BY timestamp DESC LIMIT $" + str(len(params) + 1)
+        params.append(limit)
+        
+        async with self.db.pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
             readings = []
             for row in rows:
                 # Parse alerts JSON
@@ -141,7 +168,7 @@ class MonitoringService:
     
     async def get_panel_statistics(self, panel_id: UUID, hours: int = 24) -> Dict[str, Any]:
         """Get statistical analysis for a panel"""
-        start_time = datetime.utcnow() - timedelta(hours=hours)
+        start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
         
         async with self.db.pool.acquire() as conn:
             stats = await conn.fetchrow("""
