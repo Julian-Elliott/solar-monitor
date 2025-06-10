@@ -2,7 +2,7 @@
 """
 Solar Monitor Data Logger
 Continuously reads INA228 sensor data and stores it in TimescaleDB
-Optimized for high-frequency data collection
+Optimized for high-frequency data collection with calibration fix
 """
 
 import os
@@ -18,9 +18,11 @@ import adafruit_ina228
 import psycopg2
 from psycopg2.extras import execute_batch
 from dotenv import load_dotenv
+from sensor_calibration_patch import apply_solar_calibration
 
 # Load environment variables
 load_dotenv()
+
 
 @dataclass
 class SensorReading:
@@ -30,9 +32,10 @@ class SensorReading:
     current: float
     power: float
     shunt_voltage: float
-    temperature: float  # Placeholder - not available on this sensor
+    temperature: float
     energy: float
     charge: float
+
 
 class SolarDataLogger:
     """High-performance solar data logger for TimescaleDB"""
@@ -42,11 +45,11 @@ class SolarDataLogger:
         self.sensor = None
         self.db_connection = None
         self.running = False
-        self.readings_buffer: List[SensorReading] = []
+        self.readings_buffer = []
         
         # Configuration from environment
         self.read_interval = float(os.getenv('SENSOR_READ_INTERVAL', 0.1))
-        self.batch_size = int(os.getenv('BATCH_INSERT_SIZE', 10))
+        self.batch_size = int(os.getenv('BATCH_SIZE', 100))
         
         # Database configuration
         self.db_config = {
@@ -76,7 +79,7 @@ class SolarDataLogger:
     
     def signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""
-        self.logger.info(f"Received signal {signum}, shutting down gracefully...")
+        self.logger.info(f"Received signal {signum}, shutting down...")
         self.running = False
     
     def init_sensor(self):
@@ -86,11 +89,18 @@ class SolarDataLogger:
             i2c = board.I2C()
             self.sensor = adafruit_ina228.INA228(i2c)
             
+            # Apply solar monitoring calibration fix
+            apply_solar_calibration(self.sensor)
+            self.logger.info("🔧 Applied solar calibration (0.1Ω, 1A)")
+            
             # Log sensor information
-            self.logger.info(f"✅ INA228 connected successfully!")
-            self.logger.info(f"📋 Averaging: {self.sensor.averaging_count} samples")
-            self.logger.info(f"📋 Current voltage: {self.sensor.bus_voltage:.3f}V")
-            self.logger.info(f"📋 Current: {self.sensor.current*1000:.1f}mA")
+            self.logger.info("✅ INA228 connected successfully!")
+            avg_count = self.sensor.averaging_count
+            self.logger.info(f"📋 Averaging: {avg_count} samples")
+            voltage = self.sensor.bus_voltage
+            self.logger.info(f"📋 Voltage: {voltage:.3f}V")
+            current_ma = self.sensor.current * 1000
+            self.logger.info(f"📋 Current: {current_ma:.1f}mA")
             
             return True
         except Exception as e:
@@ -122,7 +132,7 @@ class SolarDataLogger:
             current DOUBLE PRECISION NOT NULL,
             power DOUBLE PRECISION NOT NULL,
             shunt_voltage DOUBLE PRECISION NOT NULL,
-            temperature DOUBLE PRECISION NOT NULL,  -- Placeholder, not available
+            temperature DOUBLE PRECISION NOT NULL,
             energy DOUBLE PRECISION NOT NULL,
             charge DOUBLE PRECISION NOT NULL
         );
@@ -130,7 +140,8 @@ class SolarDataLogger:
         
         # Create hypertable for time-series optimization
         hypertable_sql = """
-        SELECT create_hypertable('solar_readings', 'timestamp', if_not_exists => TRUE);
+        SELECT create_hypertable('solar_readings', 'timestamp', 
+                                if_not_exists => TRUE);
         """
         
         with self.db_connection.cursor() as cursor:
@@ -150,11 +161,11 @@ class SolarDataLogger:
             # Read all sensor values
             reading = SensorReading(
                 timestamp=timestamp,
-                voltage=self.sensor.bus_voltage,  # Use bus_voltage directly
+                voltage=self.sensor.bus_voltage,
                 current=self.sensor.current,
                 power=self.sensor.power,
                 shunt_voltage=self.sensor.shunt_voltage,
-                temperature=0.0,  # Temperature not available on this sensor
+                temperature=self.sensor.die_temperature,
                 energy=self.sensor.energy,
                 charge=self.sensor.charge
             )
@@ -163,16 +174,14 @@ class SolarDataLogger:
             
         except Exception as e:
             self.logger.error(f"Error reading sensor: {e}")
-            raise
+            return
     
     def insert_readings_batch(self, readings: List[SensorReading]):
         """Insert a batch of readings into the database"""
-        if not readings:
-            return
-        
         insert_sql = """
         INSERT INTO solar_readings 
-        (timestamp, voltage, current, power, shunt_voltage, temperature, energy, charge)
+        (timestamp, voltage, current, power, shunt_voltage, temperature, 
+         energy, charge)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
         
@@ -187,7 +196,7 @@ class SolarDataLogger:
         
         try:
             with self.db_connection.cursor() as cursor:
-                execute_batch(cursor, insert_sql, data, page_size=len(data))
+                execute_batch(cursor, insert_sql, data, page_size=1000)
             
             self.logger.debug(f"📝 Inserted {len(readings)} readings")
             
@@ -215,7 +224,11 @@ class SolarDataLogger:
             return False
         
         self.running = True
-        self.logger.info(f"🚀 Starting solar monitoring (interval: {self.read_interval}s, batch size: {self.batch_size})")
+        sample_rate = 1.0 / self.read_interval
+        self.logger.info(f"🚀 Starting solar monitoring")
+        info_msg = (f"📊 Sample rate: {sample_rate:.1f} Hz "
+                   f"(interval: {self.read_interval}s)")
+        self.logger.info(info_msg)
         self.logger.info("Press Ctrl+C to stop...")
         
         reading_count = 0
@@ -227,8 +240,9 @@ class SolarDataLogger:
                 
                 # Read sensor
                 reading = self.read_sensor()
-                self.readings_buffer.append(reading)
-                reading_count += 1
+                if reading:
+                    self.readings_buffer.append(reading)
+                    reading_count += 1
                 
                 # Insert batch when buffer is full
                 if len(self.readings_buffer) >= self.batch_size:
@@ -239,11 +253,18 @@ class SolarDataLogger:
                 current_time = time.time()
                 if current_time - last_status_time >= 10:
                     rate = reading_count / (current_time - last_status_time)
-                    self.logger.info(
-                        f"📊 Status: {reading_count} readings, {rate:.1f} Hz | "
-                        f"V: {reading.voltage:.3f}V, I: {reading.current*1000:.1f}mA, "
-                        f"P: {reading.power*1000:.1f}mW, E: {reading.energy:.3f}J"
+                    buffer_size = len(self.readings_buffer)
+                    voltage = reading.voltage if reading else 0
+                    current_ma = reading.current * 1000 if reading else 0
+                    power_mw = reading.power * 1000 if reading else 0
+                    energy = reading.energy if reading else 0
+                    status_msg = (
+                        f"📊 Status: {reading_count} samples, "
+                        f"{rate:.1f} Hz | Buffer: {buffer_size} | "
+                        f"V: {voltage:.3f}V, I: {current_ma:.1f}mA, "
+                        f"P: {power_mw:.1f}mW, E: {energy:.3f}J"
                     )
+                    self.logger.info(status_msg)
                     reading_count = 0
                     last_status_time = current_time
                 
@@ -268,11 +289,13 @@ class SolarDataLogger:
             self.logger.info("🛑 Solar monitoring stopped")
             return True
 
+
 def main():
     """Main entry point"""
     logger = SolarDataLogger()
     success = logger.run()
     sys.exit(0 if success else 1)
+
 
 if __name__ == "__main__":
     main()

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Solar Monitor Data Logger - 1-Second Average Mode
-Continuously reads INA228 sensor data at high frequency but stores 1-second averages in TimescaleDB
-Reduces database storage while maintaining statistical accuracy
+Continuously reads INA228 sensor data at high frequency but stores 1-second 
+averages in TimescaleDB. Reduces database storage while maintaining statistical 
+accuracy with calibration fix applied.
 """
 
 import os
@@ -19,9 +20,11 @@ import adafruit_ina228
 import psycopg2
 from psycopg2.extras import execute_batch
 from dotenv import load_dotenv
+from sensor_calibration_patch import apply_solar_calibration
 
 # Load environment variables
 load_dotenv()
+
 
 @dataclass
 class SensorReading:
@@ -34,6 +37,7 @@ class SensorReading:
     energy: float
     charge: float
 
+
 @dataclass
 class AveragedReading:
     """Data class for averaged sensor readings"""
@@ -45,6 +49,7 @@ class AveragedReading:
     energy_last: float  # Use last value for cumulative energy
     charge_last: float  # Use last value for cumulative charge
     sample_count: int   # Number of samples averaged
+
 
 class SolarDataLoggerAveraged:
     """Solar data logger that stores 1-second averages"""
@@ -60,7 +65,7 @@ class SolarDataLoggerAveraged:
         self.last_second_timestamp = None
         
         # Configuration from environment
-        self.read_interval = float(os.getenv('SENSOR_READ_INTERVAL', 0.1))  # High frequency sampling
+        self.read_interval = float(os.getenv('SENSOR_READ_INTERVAL', 0.1))
         
         # Database configuration
         self.db_config = {
@@ -90,7 +95,7 @@ class SolarDataLoggerAveraged:
     
     def signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""
-        self.logger.info(f"Received signal {signum}, shutting down gracefully...")
+        self.logger.info(f"Received signal {signum}, shutting down...")
         self.running = False
     
     def init_sensor(self):
@@ -100,11 +105,18 @@ class SolarDataLoggerAveraged:
             i2c = board.I2C()
             self.sensor = adafruit_ina228.INA228(i2c)
             
+            # Apply solar monitoring calibration fix
+            apply_solar_calibration(self.sensor)
+            self.logger.info("🔧 Applied solar calibration (0.1Ω, 1A)")
+            
             # Log sensor information
-            self.logger.info(f"✅ INA228 connected successfully!")
-            self.logger.info(f"📋 Averaging: {self.sensor.averaging_count} samples")
-            self.logger.info(f"📋 Current voltage: {self.sensor.bus_voltage:.3f}V")
-            self.logger.info(f"📋 Current: {self.sensor.current*1000:.1f}mA")
+            self.logger.info("✅ INA228 connected successfully!")
+            avg_count = self.sensor.averaging_count
+            self.logger.info(f"📋 Averaging: {avg_count} samples")
+            voltage = self.sensor.bus_voltage
+            self.logger.info(f"📋 Voltage: {voltage:.3f}V")
+            current_ma = self.sensor.current * 1000
+            self.logger.info(f"📋 Current: {current_ma:.1f}mA")
             
             return True
         except Exception as e:
@@ -144,7 +156,8 @@ class SolarDataLoggerAveraged:
         
         # Create hypertable for time-series optimization
         hypertable_sql = """
-        SELECT create_hypertable('solar_readings_avg', 'timestamp', if_not_exists => TRUE);
+        SELECT create_hypertable('solar_readings_avg', 'timestamp', 
+                                if_not_exists => TRUE);
         """
         
         with self.db_connection.cursor() as cursor:
@@ -182,7 +195,7 @@ class SolarDataLoggerAveraged:
         """Get timestamp rounded down to the second"""
         return dt.replace(microsecond=0)
     
-    def process_second_data(self, readings: List[SensorReading]) -> AveragedReading:
+    def process_second_data(self, readings: List[SensorReading]):
         """Process a list of readings and return averaged data"""
         if not readings:
             return None
@@ -235,7 +248,8 @@ class SolarDataLoggerAveraged:
             with self.db_connection.cursor() as cursor:
                 cursor.execute(insert_sql, data)
             
-            self.logger.debug(f"📝 Inserted 1-second average ({avg_reading.sample_count} samples)")
+            sample_count = avg_reading.sample_count
+            self.logger.debug(f"📝 Inserted 1-sec avg ({sample_count} samples)")
             
         except Exception as e:
             self.logger.error(f"Database insert error: {e}")
@@ -262,8 +276,10 @@ class SolarDataLoggerAveraged:
         
         self.running = True
         sample_rate = 1.0 / self.read_interval
-        self.logger.info(f"🚀 Starting solar monitoring with 1-second averaging")
-        self.logger.info(f"📊 Sample rate: {sample_rate:.1f} Hz (interval: {self.read_interval}s)")
+        self.logger.info("🚀 Starting solar monitoring with 1-second averaging")
+        info_msg = (f"📊 Sample rate: {sample_rate:.1f} Hz "
+                   f"(interval: {self.read_interval}s)")
+        self.logger.info(info_msg)
         self.logger.info("Press Ctrl+C to stop...")
         
         reading_count = 0
@@ -287,7 +303,8 @@ class SolarDataLoggerAveraged:
                 if current_second != self.last_second_timestamp:
                     # Process and store the previous second's data
                     if self.current_second_readings:
-                        avg_reading = self.process_second_data(self.current_second_readings)
+                        avg_reading = self.process_second_data(
+                            self.current_second_readings)
                         if avg_reading:
                             self.insert_averaged_reading(avg_reading)
                     
@@ -303,11 +320,16 @@ class SolarDataLoggerAveraged:
                 if current_time - last_status_time >= 10:
                     rate = reading_count / (current_time - last_status_time)
                     buffer_size = len(self.current_second_readings)
-                    self.logger.info(
-                        f"📊 Status: {reading_count} samples, {rate:.1f} Hz | Buffer: {buffer_size} | "
-                        f"V: {reading.voltage:.3f}V, I: {reading.current*1000:.1f}mA, "
-                        f"P: {reading.power*1000:.1f}mW"
+                    voltage = reading.voltage
+                    current_ma = reading.current * 1000
+                    power_mw = reading.power * 1000
+                    status_msg = (
+                        f"📊 Status: {reading_count} samples, "
+                        f"{rate:.1f} Hz | Buffer: {buffer_size} | "
+                        f"V: {voltage:.3f}V, I: {current_ma:.1f}mA, "
+                        f"P: {power_mw:.1f}mW"
                     )
+                    self.logger.info(status_msg)
                     reading_count = 0
                     last_status_time = current_time
                 
@@ -323,7 +345,8 @@ class SolarDataLoggerAveraged:
         finally:
             # Process any remaining readings
             if self.current_second_readings:
-                avg_reading = self.process_second_data(self.current_second_readings)
+                avg_reading = self.process_second_data(
+                    self.current_second_readings)
                 if avg_reading:
                     self.insert_averaged_reading(avg_reading)
             
@@ -334,11 +357,13 @@ class SolarDataLoggerAveraged:
             self.logger.info("🛑 Solar monitoring stopped")
             return True
 
+
 def main():
     """Main entry point"""
     logger = SolarDataLoggerAveraged()
     success = logger.run()
     sys.exit(0 if success else 1)
+
 
 if __name__ == "__main__":
     main()
