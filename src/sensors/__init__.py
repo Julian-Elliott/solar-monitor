@@ -37,7 +37,7 @@ class PS100Sensor:
             
             self.logger.info(f"✅ PS100 sensor initialized at 0x{self.address:02X}")
             self.logger.info(f"   Using calibration: 32V/2A")
-            self.logger.info(f"   Actual shunt resistance: {self.ina228.shunt_resistance}Ω")
+            self.logger.info(f"   Actual shunt resistance: 0.015Ω")
         except Exception as e:
             self.logger.error(f"❌ Sensor initialization failed: {e}")
             raise

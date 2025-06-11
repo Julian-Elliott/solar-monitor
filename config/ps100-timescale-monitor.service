@@ -1,0 +1,29 @@
+[Unit]
+Description=PS100 Solar Panel Monitor with TimescaleDB
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=julianelliott
+Group=julianelliott
+WorkingDirectory=/home/julianelliott/solar-monitor
+ExecStart=/usr/bin/python3 /home/julianelliott/solar-monitor/ps100_monitor.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=60
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Environment variables
+Environment=PYTHONPATH=/home/julianelliott/solar-monitor
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONUNBUFFERED=1
+
+# Allow access to I2C devices
+SupplementaryGroups=i2c gpio
+
+[Install]
+WantedBy=multi-user.target
