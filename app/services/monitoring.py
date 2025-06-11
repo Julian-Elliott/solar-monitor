@@ -48,11 +48,7 @@ class MonitoringService:
             """, now, reading_data.panel_id)
             
             logger.debug(f"📊 Stored reading for panel {reading_data.panel_id}: {reading_data.power}W")
-            
-            # Parse alerts JSON before creating Reading object
-            row_dict = dict(row)
-            row_dict['alerts'] = json.loads(row['alerts']) if row['alerts'] else []
-            return Reading(**row_dict)
+            return Reading(**dict(row))
     
     async def get_reading(self, reading_id: UUID) -> Optional[Reading]:
         """Get a reading by ID"""

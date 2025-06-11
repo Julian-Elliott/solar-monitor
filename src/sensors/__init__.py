@@ -88,8 +88,9 @@ class PS100Sensor:
                 'shunt_voltage': shunt_voltage,
                 'temperature': temperature,
                 'energy_wh': energy_wh,
-                'efficiency': efficiency,
+                'efficiency_percent': efficiency,  # Changed from 'efficiency' to 'efficiency_percent'
                 'conditions': conditions,
+                'alerts': [],  # Add empty alerts list
                 'raw_data': {
                     'bus_voltage': voltage,
                     'shunt_voltage': shunt_voltage,

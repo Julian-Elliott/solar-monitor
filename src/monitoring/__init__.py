@@ -62,10 +62,12 @@ class PS100Monitor:
                 for panel_id, sensor in self.sensors.items():
                     reading = sensor.read()
                     if reading:
+                        # Add panel_id to the reading
+                        reading['panel_id'] = panel_id
                         self.database.store_reading(reading)
                         
                         # Log significant changes
-                        if reading['power'] > 5 or reading['has_alerts']:
+                        if reading['power'] > 5:
                             self.logger.info(
                                 f"📊 {panel_id}: {reading['power']:.1f}W "
                                 f"({reading['voltage']:.1f}V × {reading['current']:.2f}A) "
